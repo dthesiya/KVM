@@ -1,0 +1,237 @@
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index ccbd45e..b096ea5 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -6225,6 +6225,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
+ 
+ 	op_64_bit = is_64_bit_mode(vcpu);
+ 	if (!op_64_bit) {
++		printk(KERN_INFO "inside 32 bit \n");
+ 		nr &= 0xFFFFFFFF;
+ 		a0 &= 0xFFFFFFFF;
+ 		a1 &= 0xFFFFFFFF;
+@@ -6232,12 +6233,171 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
+ 		a3 &= 0xFFFFFFFF;
+ 	}
+ 
+-	if (kvm_x86_ops->get_cpl(vcpu) != 0) {
++	if (kvm_x86_ops->get_cpl(vcpu) != 0 && nr&0xFFFFFFFF != 0x0F3D) {
+ 		ret = -KVM_EPERM;
+ 		goto out;
+ 	}
+ 
+-	switch (nr) {
++	unsigned long argument;
++	argument = nr>>32;
++
++	switch (nr&0xFFFFFFFF) {
++	case 0x0F3B:
++                        printk(KERN_INFO "hypercall 0x0F3B new cpuid called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "a1 = 0x%lx/n",a1);
++                        printk(KERN_INFO "a2 = 0x%lx/n",a2);
++
++                        kvm_cpuid(vcpu,(u32 *)&argument,(u32 *)&a0,(u32 *)&a1,(u32 *)&a2);
++                        kvm_register_write(vcpu, VCPU_REGS_RBX, (u32)a0);
++                        kvm_register_write(vcpu, VCPU_REGS_RCX, (u32)a1);
++                        kvm_register_write(vcpu, VCPU_REGS_RDX, (u32)a2);
++
++                        printk(KERN_INFO "--POST CALL -- \n ");
++                        printk(KERN_INFO "nr = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "a1 = 0x%lx/n",a1);
++                        printk(KERN_INFO "a2 = 0x%lx/n",a2);
++
++                        ret=argument;
++                        break;
++	case 0x0F3C:
++                        printk(KERN_INFO "hypercall 0x0F3C new cpuid called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "a1 = 0x%lx/n",a1);
++                        printk(KERN_INFO "a2 = 0x%lx/n",a2);
++                        if(argument == 0xA0000000){
++	                        kvm_register_write(vcpu, VCPU_REGS_RBX, 0x00333832);
++	                        ret=0x454D5043;
++                        }else{
++                        	kvm_cpuid(vcpu,(u32 *)&argument,(u32 *)&a0,(u32 *)&a1,(u32 *)&a2);
++	                        kvm_register_write(vcpu, VCPU_REGS_RBX, (u32)a0);
++	                        kvm_register_write(vcpu, VCPU_REGS_RCX, (u32)a1);
++	                        kvm_register_write(vcpu, VCPU_REGS_RDX, (u32)a2);
++                        	ret=argument;
++	                        printk(KERN_INFO "--POST CALL -- \n ");
++	                        printk(KERN_INFO "nr = 0x%lx/n",argument);
++	                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++	                        printk(KERN_INFO "a1 = 0x%lx/n",a1);
++	                        printk(KERN_INFO "a2 = 0x%lx/n",a2);
++                        }
++                        break;
++	case 0x0F3D:
++                        printk(KERN_INFO "GETCTR hypercall 0x0F3D called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "counter = %lx && vcpu : %d/n",vcpu->kvm->cmpe_ctr.counter,vcpu->vcpu_id);
++                        ret=atomic64_read(&vcpu->kvm->cmpe_ctr);
++                        if(ret == 0xFFFFFFFF){
++                        	atomic64_set(&vcpu->kvm->cmpe_ctr, 0x0);
++                        }else{
++                        	atomic64_inc(&vcpu->kvm->cmpe_ctr);
++                        }
++                        break;
++    case 0x0F3E:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F3E called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++
++                        ret=atomic64_read(&vcpu->cmpe_ctr);
++                        unsigned long temp = ret;
++
++                        if(argument == 0xFFFFFFFF){
++                        	atomic64_set(&vcpu->cmpe_ctr, 0x0);
++                        	temp = 0x0;
++                        }
++                        if(temp == 0x0){
++                        	kvm_set_rflags(vcpu, kvm_get_rflags(vcpu) | X86_EFLAGS_ZF);
++                        }else{
++                        	kvm_set_rflags(vcpu, kvm_get_rflags(vcpu) & ~X86_EFLAGS_ZF);
++                        }
++                        if(argument != 0xFFFFFFFF){
++	                        if(temp == 0xFFFFFFFF){
++                        		atomic64_set(&vcpu->cmpe_ctr, 0x0);
++	                        	kvm_set_rflags(vcpu, kvm_get_rflags(vcpu) | X86_EFLAGS_OF);
++	                        }else{
++                        		atomic64_inc(&vcpu->cmpe_ctr);
++	                        	kvm_set_rflags(vcpu, kvm_get_rflags(vcpu) & ~X86_EFLAGS_OF);
++	                        }
++	                    }
++
++                        printk(KERN_INFO "--POST CALL -- \n ");
++                        printk(KERN_INFO "RFLAGS = 0x%lx/n",kvm_get_rflags(vcpu));
++                        break;
++    case 0x0F3F:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F3F called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "before counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                		atomic64_set(&vcpu->cmpe_ctr, argument);
++                        printk(KERN_INFO "after counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        break;
++    case 0x0F24:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F24 called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "before counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        argument = a0&0xFFFFFFFF;
++                		atomic64_set(&vcpu->cmpe_ctr, argument);
++                        printk(KERN_INFO "after counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        break;
++    case 0x0F25:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F25 called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "a1 = 0x%lx/n",a1);
++                        printk(KERN_INFO "before counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        argument = a1&0xFFFFFFFF;
++                		atomic64_set(&vcpu->cmpe_ctr, argument);
++                        printk(KERN_INFO "after counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        break;
++    case 0x0F26:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F26 called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a2 = 0x%lx/n",a2);
++                        printk(KERN_INFO "before counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        argument = a2&0xFFFFFFFF;
++                		atomic64_set(&vcpu->cmpe_ctr, argument);
++                        printk(KERN_INFO "after counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++                        break;
++    case 0x0F27:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F27 called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "a3 = 0x%lx/n",a3);
++						if (op_64_bit) {
++	                        printk(KERN_INFO "before counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++	                        argument = a3;
++	                        uint64_t value = 0xDEADBEEFDEADBEEF;
++	                        unsigned int bytes = 8;
++	                        struct x86_exception exception;
++							int r = kvm_read_guest_virt_helper(argument, &value, bytes, vcpu, 0, &exception);
++
++	                        printk(KERN_INFO "after evaluation value = %lx/n", value);
++                			atomic64_set(&vcpu->cmpe_ctr, value);
++	                        printk(KERN_INFO "after counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++	                    }
++                        break;
++    case 0x0F39:
++                        printk(KERN_INFO "GETCTR2 hypercall 0x0F39 called \n");
++                        printk(KERN_INFO "nr = 0x%lx/n",nr);
++                        printk(KERN_INFO "fn = 0x%lx/n",argument);
++                        printk(KERN_INFO "a0 = 0x%lx/n",a0);
++                        printk(KERN_INFO "counter = %lx && vcpu : %d/n",vcpu->cmpe_ctr.counter,vcpu->vcpu_id);
++
++            			atomic64_set(&vcpu->cmpe_ctr, argument);
++                        break;
++
+ 	case KVM_HC_VAPIC_POLL_IRQ:
+ 		ret = 0;
+ 		break;
+@@ -6250,7 +6410,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
+ 		ret = kvm_pv_clock_pairing(vcpu, a0, a1);
+ 		break;
+ #endif
+-	default:
++    	default:
+ 		ret = -KVM_ENOSYS;
+ 		break;
+ 	}
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index d025074..888958c 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -205,6 +205,7 @@ struct kvm_mmio_fragment {
+ };
+ 
+ struct kvm_vcpu {
++	atomic64_t cmpe_ctr;
+ 	struct kvm *kvm;
+ #ifdef CONFIG_PREEMPT_NOTIFIERS
+ 	struct preempt_notifier preempt_notifier;
+@@ -371,6 +372,7 @@ struct kvm_memslots {
+ };
+ 
+ struct kvm {
++	atomic64_t cmpe_ctr;
+ 	spinlock_t mmu_lock;
+ 	struct mutex slots_lock;
+ 	struct mm_struct *mm; /* userspace tied to this vm */
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 88257b3..c470875 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -612,6 +612,7 @@ static struct kvm *kvm_create_vm(unsigned long type)
+ 	if (!kvm)
+ 		return ERR_PTR(-ENOMEM);
+ 
++	atomic64_set(&kvm->cmpe_ctr, 0x0);
+ 	spin_lock_init(&kvm->mmu_lock);
+ 	mmgrab(current->mm);
+ 	kvm->mm = current->mm;
+@@ -2492,8 +2493,8 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
+ 		goto unlock_vcpu_destroy;
+ 	}
+ 
++	atomic64_set(&vcpu->cmpe_ctr, 0x0);
+ 	kvm->vcpus[atomic_read(&kvm->online_vcpus)] = vcpu;
+-
+ 	/*
+ 	 * Pairs with smp_rmb() in kvm_get_vcpu.  Write kvm->vcpus
+ 	 * before kvm->online_vcpu's incremented value.
